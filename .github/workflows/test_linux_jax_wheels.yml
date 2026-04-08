@@ -245,12 +245,113 @@ jobs:
           echo "  JAX_PLUGIN_VERSION=${JAX_PLUGIN_VERSION}"
           echo "  JAX_PJRT_VERSION=${JAX_PJRT_VERSION}"
           echo "  JAX_VERSION=${JAX_VERSION}"
-          # Install jaxlib/plugin/pjrt from the GPU-family index; install jax from PyPI to match the version
+          # Install jaxlib/plugin/pjrt from the GPU-family index first.
+          # Then install jax with --no-deps so pip does not replace jaxlib with a CPU wheel.
           pip install --index-url "${{ env.WHEEL_INDEX_URL }}" \
             "jaxlib==${JAXLIB_VERSION}" \
             "jax_rocm7_plugin==${JAX_PLUGIN_VERSION}" \
             "jax_rocm7_pjrt==${JAX_PJRT_VERSION}"
-          pip install jax==${JAX_VERSION}
+          pip install --no-deps "jax==${JAX_VERSION}"
+
+      - name: Verify ROCm JAX wheel installation
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+          import pathlib
+          import sys
+
+          expected = {
+            "jax": "${JAX_VERSION}",
+            "jaxlib": "${JAXLIB_VERSION}",
+            "jax-rocm7-plugin": "${JAX_PLUGIN_VERSION}",
+            "jax-rocm7-pjrt": "${JAX_PJRT_VERSION}",
+          }
+
+          def normalized(name: str) -> str:
+            return name.lower().replace("_", "-")
+
+          installed = {normalized(dist.metadata["Name"]): dist.version for dist in md.distributions()}
+          print("Installed JAX package versions:")
+          for name in ["jax", "jaxlib", "jax-rocm7-plugin", "jax-rocm7-pjrt"]:
+            print(f"  {name}={installed.get(name, '<missing>')}")
+
+          missing = [name for name in expected if name not in installed]
+          if missing:
+            raise SystemExit(f"Missing required JAX package(s): {', '.join(missing)}")
+
+          mismatched = [
+            f"{name}: expected {expected[name]}, got {installed[name]}"
+            for name in expected
+            if installed[name] != expected[name]
+          ]
+          if mismatched:
+            raise SystemExit("Version mismatch after install:\n  " + "\n  ".join(mismatched))
+
+          # The plugin loader discovers the wheel root via package metadata.
+          # Validate that the ROCm plugin package can be resolved before tests run.
+          plugin_dist = md.distribution("jax-rocm7-plugin")
+          if not pathlib.Path(plugin_dist.locate_file("")).exists():
+            raise SystemExit("jax-rocm7-plugin distribution path does not exist")
+
+          print("ROCm JAX wheel verification passed")
+          PY
+
+      - name: JAX ROCm smoke probe (non-blocking)
+        continue-on-error: true
+        env:
+          JAX_PLATFORMS: rocm
+          HIP_DEVICE_LIB_PATH: /opt/rocm/lib/llvm/amdgcn/bitcode
+          JAX_ROCM_PLUGIN_INTERNAL_BITCODE_PATH: /opt/rocm/lib/llvm/amdgcn/bitcode
+          JAX_ROCM_PLUGIN_INTERNAL_LLD_PATH: /opt/rocm/lib/llvm/bin
+        run: |
+          python - <<'PY'
+          import importlib.metadata as md
+          import importlib.util as iu
+          import pathlib
+          import platform
+          import sys
+
+          print("=== Python/runtime ===")
+          print(f"python={sys.version}")
+          print(f"platform={platform.platform()}")
+
+          print("=== Installed JAX dists ===")
+          for name in ["jax", "jaxlib", "jax-rocm7-plugin", "jax-rocm7-pjrt"]:
+            try:
+              print(f"{name}={md.version(name)}")
+            except md.PackageNotFoundError:
+              print(f"{name}=<missing>")
+
+          print("=== Plugin module resolution ===")
+          spec = iu.find_spec("jax_plugins.xla_rocm7")
+          if spec is None:
+            print("jax_plugins.xla_rocm7 spec=<missing>")
+          else:
+            print(f"jax_plugins.xla_rocm7 origin={spec.origin}")
+            print(f"jax_plugins.xla_rocm7 search_locations={list(spec.submodule_search_locations or [])}")
+
+          try:
+            plugin_dist = md.distribution("jax-rocm7-plugin")
+            plugin_root = pathlib.Path(plugin_dist.locate_file(""))
+            print(f"jax-rocm7-plugin root={plugin_root}")
+            print(f"jax-rocm7-plugin root exists={plugin_root.exists()}")
+          except md.PackageNotFoundError:
+            print("jax-rocm7-plugin dist=<missing>")
+
+          print("=== Backend probe ===")
+          try:
+            import jax
+
+            backend = jax.default_backend()
+            devices = jax.devices()
+            print(f"default_backend={backend}")
+            print(f"device_count={len(devices)}")
+            for idx, dev in enumerate(devices):
+              print(f"device[{idx}]={dev}")
+          except BaseException as e:
+            print(f"backend_probe_exception={type(e).__name__}: {e}")
+            raise
+          PY
 
       - name: Run JAX tests
         env:
