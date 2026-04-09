@@ -153,17 +153,19 @@ jobs:
             ccache -s -v
             tail -v -n +1 .ccache/compiler_check_cache/* > build/logs/ccache_compiler_check_cache.log
           else
-            echo "[ERROR] Build directory ./build does not exist. Skipping report!"
-            echo "        This should only happen if the CI is cancelled before the build step."
-            exit 1
+            echo "Skipping report: build directory ./build does not exist"
           fi
 
       # Analyze ninja build log to generate per-component timing report
       - name: Analyze Build Times
         if: ${{ !cancelled() }}
         run: |
-          python3 build_tools/resource_info.py --finalize
-          python3 build_tools/analyze_build_times.py --build-dir build
+          python3 build_tools/resource_info.py --finalize || true
+          if [ -f "build/.ninja_log" ]; then
+            python3 build_tools/analyze_build_times.py --build-dir build
+          else
+            echo "Skipping build time analysis: build/.ninja_log not found"
+          fi
 
       - name: Configure AWS Credentials
         if: ${{ always() }}
@@ -172,8 +174,12 @@ jobs:
       - name: Post Build Upload
         if: always()
         run: |
-          python3 build_tools/github_actions/post_build_upload.py \
-            --run-id ${{ github.run_id }} \
-            --artifact-group "${{ inputs.artifact_group }}" \
-            --build-dir build \
-            --upload
+          if [ -d "build" ]; then
+            python3 build_tools/github_actions/post_build_upload.py \
+              --run-id ${{ github.run_id }} \
+              --artifact-group "${{ inputs.artifact_group }}" \
+              --build-dir build \
+              --upload
+          else
+            echo "Skipping post-build upload: build directory does not exist"
+          fi

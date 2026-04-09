@@ -270,7 +270,7 @@ jobs:
           python ./external-builds/pytorch/build_prod_wheels.py ^
             build ^
             --install-rocm ^
-            --index-url "${{ inputs.cloudfront_url }}/${{ inputs.amdgpu_family }}/" ^
+            --find-links "${{ inputs.cloudfront_url }}/${{ inputs.amdgpu_family }}/" ^
             --pytorch-dir ${{ env.CHECKOUT_ROOT }}/torch ^
             --pytorch-audio-dir ${{ env.CHECKOUT_ROOT }}/audio ^
             --pytorch-vision-dir ${{ env.CHECKOUT_ROOT }}/vision ^

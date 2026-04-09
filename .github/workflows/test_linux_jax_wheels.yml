@@ -245,12 +245,33 @@ jobs:
           echo "  JAX_PLUGIN_VERSION=${JAX_PLUGIN_VERSION}"
           echo "  JAX_PJRT_VERSION=${JAX_PJRT_VERSION}"
           echo "  JAX_VERSION=${JAX_VERSION}"
-          # Install jaxlib/plugin/pjrt from the GPU-family index; install jax from PyPI to match the version
-          pip install --index-url "${{ env.WHEEL_INDEX_URL }}" \
+          # Install jaxlib/plugin/pjrt from the GPU-family index and keep transitive deps from PyPI.
+          pip install --find-links "${{ env.WHEEL_INDEX_URL }}" \
             "jaxlib==${JAXLIB_VERSION}" \
             "jax_rocm7_plugin==${JAX_PLUGIN_VERSION}" \
             "jax_rocm7_pjrt==${JAX_PJRT_VERSION}"
-          pip install jax==${JAX_VERSION}
+          # Install framework metapackage without deps to avoid replacing accelerator-specific wheels.
+          pip install --no-deps "jax==${JAX_VERSION}"
+
+      - name: Verify installed JAX package versions
+        run: |
+          python - <<'PY'
+          import importlib.metadata as m
+
+          expected = {
+              "jaxlib": "${JAXLIB_VERSION}",
+              "jax-rocm7-plugin": "${JAX_PLUGIN_VERSION}",
+              "jax-rocm7-pjrt": "${JAX_PJRT_VERSION}",
+              "jax": "${JAX_VERSION}",
+          }
+          for pkg, expected_version in expected.items():
+              installed = m.version(pkg)
+              print(f"{pkg}={installed}")
+              if installed != expected_version:
+                  raise SystemExit(
+                      f"Version mismatch for {pkg}: expected {expected_version}, got {installed}"
+                  )
+          PY
 
       - name: Run JAX tests
         env:

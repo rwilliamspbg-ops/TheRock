@@ -161,9 +161,7 @@ jobs:
             echo "-------------"
             ccache -s -v
           else
-            echo "[ERROR] Build directory ${{ env.BUILD_DIR }} does not exist. Skipping report!"
-            echo "        This should only happen if the CI is cancelled before the build step."
-            exit 1
+            echo "Skipping report: build directory ${{ env.BUILD_DIR }} does not exist"
           fi
 
       - name: "Build size report"
@@ -182,8 +180,12 @@ jobs:
       - name: Post Build Upload
         if: always()
         run: |
-          python3 build_tools/github_actions/post_build_upload.py \
-            --run-id ${{ github.run_id }} \
-            --artifact-group ${{ inputs.artifact_group }} \
-            --build-dir ${{ env.BUILD_DIR }} \
-            --upload
+          if [ -d "${{ env.BUILD_DIR }}" ]; then
+            python3 build_tools/github_actions/post_build_upload.py \
+              --run-id ${{ github.run_id }} \
+              --artifact-group ${{ inputs.artifact_group }} \
+              --build-dir ${{ env.BUILD_DIR }} \
+              --upload
+          else
+            echo "Skipping post-build upload: build directory ${{ env.BUILD_DIR }} does not exist"
+          fi

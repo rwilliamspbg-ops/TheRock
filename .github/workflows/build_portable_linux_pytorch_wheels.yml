@@ -241,7 +241,7 @@ jobs:
           ./external-builds/pytorch/build_prod_wheels.py \
             build \
             --install-rocm \
-            --index-url "${{ inputs.cloudfront_url }}/${{ inputs.amdgpu_family }}/" \
+            --find-links "${{ inputs.cloudfront_url }}/${{ inputs.amdgpu_family }}/" \
             --clean \
             --output-dir ${{ env.PACKAGE_DIST_DIR }} \
             ${cache_flag} \
