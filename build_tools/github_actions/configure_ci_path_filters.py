@@ -36,7 +36,8 @@ def get_git_modified_paths(base_ref: str) -> Optional[Iterable[str]]:
         base_ref: Git reference (commit SHA, branch name, or HEAD^1) to compare against
 
     Returns:
-        List of relative file paths that were modified, or None if the operation times out
+        List of relative file paths that were modified, or None if the
+        operation times out or the reference is unavailable.
     """
     try:
         return subprocess.run(
@@ -46,10 +47,18 @@ def get_git_modified_paths(base_ref: str) -> Optional[Iterable[str]]:
             text=True,
             timeout=60,
         ).stdout.splitlines()
-    except TimeoutError:
+    except subprocess.TimeoutExpired:
         print(
             "Computing modified files timed out. Not using PR diff to determine"
             " jobs to run.",
+            file=sys.stderr,
+        )
+        return None
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(
+            "Could not compute modified files from git diff "
+            f"(base_ref={base_ref!r}): {e}. "
+            "Proceeding without PR diff filtering.",
             file=sys.stderr,
         )
         return None
@@ -76,14 +85,14 @@ def get_git_submodule_paths(repo_root: Optional[str] = None) -> Optional[Iterabl
             cwd=repo_root,
         ).stdout.splitlines()
 
-        submodule_paths = []
+        submodule_paths: list[str] = []
         for line in response:
             submodule_data_array = line.split()
             # The line will be "{commit-hash} {path} {branch}". We will retrieve the path.
             if len(submodule_data_array) >= 2:
                 submodule_paths.append(submodule_data_array[1])
         return submodule_paths
-    except TimeoutError:
+    except subprocess.TimeoutExpired:
         print(
             "Computing submodule paths timed out.",
             file=sys.stderr,
