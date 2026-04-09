@@ -46,6 +46,8 @@ on:
     types:
       - labeled
       - opened
+      - reopened
+      - ready_for_review
       - synchronize
 
 permissions:
