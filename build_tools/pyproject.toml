@@ -2,6 +2,7 @@
 testpaths = [
     "tests",
     "github_actions/tests",
+    "third_party/s3_management",
 ]
 python_files = ["*_test.py"]
 addopts = "-ra"
